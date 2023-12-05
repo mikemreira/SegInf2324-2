@@ -6,10 +6,12 @@ const FormData = require('form-data');// more info at:
 // https://jwt.io/#libraries
 const jwt = require('jsonwebtoken');
 const { newEnforcer } = require('casbin')
+const { Octokit } = require('@octokit/core');
 
 // já temos milestones criadas, fazer redirect para oauth no github, e obter as milestones, depois clicar numa milestone e criar como uma google task
 
-const GITHUB_CLIENT_ID = "dd46b6c8d9ff8983b6ef"
+const GITHUB_CLIENT_ID = "c9ba4c33fd449924e2fa"
+const GITHUB_CLIENT_SECRET = "a4c3dc682b9296eed9c3397cd29927929622f21b"
 
 const port = 3001
 
@@ -67,36 +69,73 @@ app.get("/github", (req, res) => {
     res.redirect(302, "https://github.com/login/oauth/authorize?"
                 + "client_id=" + GITHUB_CLIENT_ID + "&"
                 + "redirect_uri=" + "http://localhost:3001/callback-2324&"
-                + "scope=user&"
+                + "scope=user&" //TODO(): MUDAR O SCOPE DE USER PARA REPO?
                 + "state=seginf")
 })
 
-app.get("/callback-2324", (req, res) => {
-    const form = new FormData()
-    form.append("client_id", GITHUB_CLIENT_ID)
-    form.append("client_secret", "bfca2b8dae34535553070fa20c35da1bbf835d72")
-    const searchParams = new URLSearchParams(window.location.search);
+app.get("/callback-2324", async (req, res) => {
+    const githubCode = req.query.code;
+    
+    // Create FormData with required parameters
+    const form = new FormData();
+    form.append("client_id", GITHUB_CLIENT_ID);
+    form.append("client_secret", GITHUB_CLIENT_SECRET);
+    form.append("code", githubCode);
+    form.append("redirect_uri", "http://localhost:3001/callback-2324");
 
-    form.append("code", searchParams.get("code"))
-    form.append("redirect_uri", "http://localhost:3001")
-    axios.post("https://github.com/login/oauth/access_token")
-        .then(response => {
-            res.cookie("Github_Token", response.data)
-        })
-})
+    // Make a POST request to GitHub token endpoint
+    try {
+        const response = await axios.post("https://github.com/login/oauth/access_token", form, {
+            headers: {
+                ...form.getHeaders()
+            }
+        });
 
-app.get('/'+CALLBACK, (req, resp) => {
+        // Save the GitHub token in a cookie or handle it as needed
+        res.cookie("Github_Token", response.data.access_token);
+
+        const urlSearchParams = new URLSearchParams(response.data);
+        const accessToken = urlSearchParams.get('access_token');
+        console.log(accessToken)
+
+        const owner = "47186JoaoSilva"; // Replace with the actual owner (username) of the repository
+        const repo = "SegInfTest"; // Replace with the actual name of the repository
+
+        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/milestones`;
+
+        const octokit = new Octokit({
+            auth: `Bearer ${accessToken}`,
+            userAgent: 'YourApp/1.0.0', // Replace with your app's name and version
+            baseUrl: 'https://api.github.com',
+            request: {
+                headers: {
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            }
+        });
+
+        const { data: projects } = await octokit.request('GET /repos/{owner}/{repo}/projects', {
+            owner,
+            repo
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("Internal Server Error");
+    }
+});
+
+app.get('/callback-demo2324', (req, resp) => {
     //
     // TODO: check if 'state' is correct for this session
     //
 
-    console.log('making request to token endpoint')
+    console.log('making request to token endpoint');
     // content-type: application/x-www-form-urlencoded (URL-Encoded Forms)
     const form = new FormData();
     form.append('code', req.query.code);
     form.append('client_id', CLIENT_ID);
     form.append('client_secret', CLIENT_SECRET);
-    form.append('redirect_uri', 'http://localhost:3001/'+CALLBACK);
+    form.append('redirect_uri', 'http://localhost:3001/callback-demo2324');
     form.append('grant_type', 'authorization_code');
     //console.log(form);
 
@@ -106,33 +145,37 @@ app.get('/'+CALLBACK, (req, resp) => {
         // body parameters in form url encoded
         form,
         { headers: form.getHeaders() }
-      )
-      .then(function (response) {
+    )
+    .then(function (response) {
         // AXIOS assumes by default that response type is JSON: https://github.com/axios/axios#request-config
         // Property response.data should have the JSON response according to schema described here: https://openid.net/specs/openid-connect-core-1_0.html#TokenResponse
 
-        console.log(response.data)
+        console.log(response.data);
         // decode id_token from base64 encoding
         // note: method decode does not verify signature
-        var jwt_payload = jwt.decode(response.data.id_token)
-        console.log(jwt_payload)
+        var jwt_payload = jwt.decode(response.data.id_token);
+        console.log(jwt_payload);
 
         // a simple cookie example
-        resp.cookie("user_email", jwt_payload.email)
+        resp.cookie("user_email", jwt_payload.email);
         // HTML response with the code and access token received from the authorization server
         resp.send(
             '<div> callback with code = <code>' + req.query.code + '</code></div><br>' +
             '<div> client app received access code = <code>' + response.data.access_token + '</code></div><br>' +
             '<div> id_token = <code>' + response.data.id_token + '</code></div><br>' +
-            '<div> Hi <b>' + jwt_payload.email + '</b> </div><br>' +
+            '<div> Hi <b>' + jwt_payload.email + '</b> </div>' +
+            // Add a button that triggers the /github route
+            '<form action="/github" method="get">' +
+            '   <button type="submit">Authenticate with GitHub</button>' +
+            '</form>' +
             'Go back to <a href="/">Home screen</a>'
         );
-      })
-      .catch(function (error) {
-        console.log(error)
-        resp.send()
-      });
-})
+    })
+    .catch(function (error) {
+        console.log(error);
+        resp.send();
+    });
+});
 
 app.get("/tasks", (req, res) => {
     console.log("Entered function")
