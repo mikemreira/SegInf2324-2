@@ -60,64 +60,81 @@ app.get('/login', (req, resp) => {
 })
 
 app.get("/github", (req, res) => {
-    /*const form = new FormData()
-    form.append("client_id", GITHUB_CLIENT_ID)
-    form.append("redirect_uri", "http://localhost:3001/callback-2324")
-    form.append("scope", "user")
-    form.append("state", "seginf")*/
-
     res.redirect(302, "https://github.com/login/oauth/authorize?"
                 + "client_id=" + GITHUB_CLIENT_ID + "&"
                 + "redirect_uri=" + "http://localhost:3001/callback-2324&"
-                + "scope=user&" //TODO(): MUDAR O SCOPE DE USER PARA REPO?
+                + "scope=user repo&" //TODO(): MUDAR O SCOPE DE USER PARA REPO?
                 + "state=seginf")
 })
 
-app.get("/callback-2324", async (req, res) => {
+// Callback route for the initial 'user' scope authorization
+app.get("/callback-2324", (req, res) => {
     const githubCode = req.query.code;
-    
+
     // Create FormData with required parameters
-    const form = new FormData();
-    form.append("client_id", GITHUB_CLIENT_ID);
-    form.append("client_secret", GITHUB_CLIENT_SECRET);
-    form.append("code", githubCode);
-    form.append("redirect_uri", "http://localhost:3001/callback-2324");
+    const data = new URLSearchParams();
+    data.append("client_id", GITHUB_CLIENT_ID);
+    data.append("client_secret", GITHUB_CLIENT_SECRET);
+    data.append("code", githubCode);
+    data.append("redirect_uri", "http://localhost:3001/callback-2324");
 
+    
     // Make a POST request to GitHub token endpoint
-    try {
-        const response = await axios.post("https://github.com/login/oauth/access_token", form, {
+    axios.post("https://github.com/login/oauth/access_token", data, {
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+        }
+    }).then(response => {
+        // Check if the request was successful
+        if (response.data.access_token) {
+          // Access token obtained
+          const accessToken = response.data.access_token;
+          console.log("Access Token:", accessToken);
+          res.cookie("Github_Token", accessToken);
+
+          res.redirect("/github/repo-scope");
+        } else {
+          // Handle error
+          console.error("Error:", response.data.error_description || "Unknown error");
+        }
+      })
+      .catch(error => {
+        // Handle network error or other issues
+        console.error("Error:", error.message || "Network error");
+      });
+});
+
+app.get("/github/repo-scope", async (req, res) => {
+    const accessToken = req.cookies.Github_Token;
+    console.log(accessToken)
+
+    // Use the 'accessToken' to access the GitHub API with 'repo' scope
+    const owner = "47186JoaoSilva"; // Replace with the actual owner (username) of the repository
+    const repo = "SegInfTest"; // Replace with the actual name of the repository
+
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/milestones`;
+
+    const octokit = new Octokit({
+        auth: `Bearer ${accessToken}`,
+        request: {
             headers: {
-                ...form.getHeaders()
+                'X-GitHub-Api-Version': '2022-11-28'
             }
-        });
+        }
+    });
 
-        // Save the GitHub token in a cookie or handle it as needed
-        res.cookie("Github_Token", response.data.access_token);
-
-        const urlSearchParams = new URLSearchParams(response.data);
-        const accessToken = urlSearchParams.get('access_token');
-        console.log(accessToken)
-
-        const owner = "47186JoaoSilva"; // Replace with the actual owner (username) of the repository
-        const repo = "SegInfTest"; // Replace with the actual name of the repository
-
-        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/milestones`;
-
-        const octokit = new Octokit({
-            auth: `Bearer ${accessToken}`,
-            userAgent: 'YourApp/1.0.0', // Replace with your app's name and version
-            baseUrl: 'https://api.github.com',
-            request: {
-                headers: {
-                    'X-GitHub-Api-Version': '2022-11-28'
-                }
-            }
-        });
-
-        const { data: projects } = await octokit.request('GET /repos/{owner}/{repo}/projects', {
+    try {
+        const { data: milestones } = await octokit.request('GET /repos/{owner}/{repo}/milestones', {
             owner,
             repo
         });
+
+        const milestoneTitles = milestones.map(milestone => milestone.title).join('\n');
+
+        // Send the titles as a response
+        res.send(milestoneTitles);
+
     } catch (error) {
         console.error(error);
         res.status(500).send("Internal Server Error");
