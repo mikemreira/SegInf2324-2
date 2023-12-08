@@ -46,7 +46,7 @@ app.get('/login', (req, resp) => {
         + 'client_id='+ CLIENT_ID +'&'
         
         // OpenID scope "openid email"
-        + 'scope=openid%20email&'
+        + 'scope=https://www.googleapis.com/auth/tasks%20openid%20email&'
         
         // parameter state is used to check if the user-agent requesting login is the same making the request to the callback URL
         // more info at https://www.rfc-editor.org/rfc/rfc6749#section-10.12
@@ -87,7 +87,6 @@ app.get("/callback-2324", (req, res) => {
         if (response.data.access_token) {
           // Access token obtained
           const accessToken = response.data.access_token;
-          console.log("Access Token:", accessToken);
           res.cookie("Github_Token", accessToken);
 
           res.redirect("/github/repo-scope");
@@ -128,6 +127,8 @@ app.get("/github/repo-scope", async (req, res) => {
             repo
         });
 
+        console.log(milestones);
+
         fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
             method: 'GET',
             headers: {
@@ -137,36 +138,34 @@ app.get("/github/repo-scope", async (req, res) => {
             .then(response => response.json())
             .then(data => {
                 console.log(data);
+                const taskDetails = {
+                    title: 'Test1',
+                    notes: ' ',
+                    due: '2023-12-31T23:59:59Z',
+                };
+
+                const apiUrl = `https://tasks.googleapis.com/tasks/v1/lists/${data.items[0].id}/tasks`;
+                fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${googleAccessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(taskDetails),
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Task created:', data);
+                    })
+                    .catch(error => {
+                        console.error('Error creating task:', error);
+                    });
+                
             })
             .catch(error => {
                 console.error('Error retrieving task lists:', error);
             });
-
-        /*milestones.map(milestone => {
-            const taskDetails = {
-                title: milestone,
-                notes: ' ',
-                due: '2023-12-31T23:59:59Z',
-              };
-
-            const apiUrl = `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks`;
-            fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${googleAccessToken}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(taskDetails),
-            })
-                .then(response => response.json())
-                .then(data => {
-                  console.log('Task created:', data);
-                })
-                .catch(error => {
-                  console.error('Error creating task:', error);
-                });
-        });*/
-        //res.send(milestoneTitles);
+        res.send('Send');
 
     } catch (error) {
         console.error(error);
