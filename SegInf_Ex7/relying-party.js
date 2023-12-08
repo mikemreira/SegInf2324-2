@@ -63,15 +63,13 @@ app.get("/github", (req, res) => {
     res.redirect(302, "https://github.com/login/oauth/authorize?"
                 + "client_id=" + GITHUB_CLIENT_ID + "&"
                 + "redirect_uri=" + "http://localhost:3001/callback-2324&"
-                + "scope=user repo&" //TODO(): MUDAR O SCOPE DE USER PARA REPO?
+                + "scope=user repo&" 
                 + "state=seginf")
 })
 
-// Callback route for the initial 'user' scope authorization
 app.get("/callback-2324", (req, res) => {
     const githubCode = req.query.code;
 
-    // Create FormData with required parameters
     const data = new URLSearchParams();
     data.append("client_id", GITHUB_CLIENT_ID);
     data.append("client_secret", GITHUB_CLIENT_SECRET);
@@ -79,7 +77,6 @@ app.get("/callback-2324", (req, res) => {
     data.append("redirect_uri", "http://localhost:3001/callback-2324");
 
     
-    // Make a POST request to GitHub token endpoint
     axios.post("https://github.com/login/oauth/access_token", data, {
         headers: {
             'Accept': 'application/json',
@@ -107,11 +104,12 @@ app.get("/callback-2324", (req, res) => {
 
 app.get("/github/repo-scope", async (req, res) => {
     const accessToken = req.cookies.Github_Token;
+    const googleAccessToken = req.cookies.google_access_token;
     console.log(accessToken)
+    console.log(googleAccessToken)
 
-    // Use the 'accessToken' to access the GitHub API with 'repo' scope
-    const owner = "47186JoaoSilva"; // Replace with the actual owner (username) of the repository
-    const repo = "SegInfTest"; // Replace with the actual name of the repository
+    const owner = "47186JoaoSilva"; 
+    const repo = "SegInfTest"; 
 
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/milestones`;
 
@@ -130,10 +128,45 @@ app.get("/github/repo-scope", async (req, res) => {
             repo
         });
 
-        const milestoneTitles = milestones.map(milestone => milestone.title).join('\n');
+        fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${googleAccessToken}`,
+            },
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data);
+            })
+            .catch(error => {
+                console.error('Error retrieving task lists:', error);
+            });
 
-        // Send the titles as a response
-        res.send(milestoneTitles);
+        /*milestones.map(milestone => {
+            const taskDetails = {
+                title: milestone,
+                notes: ' ',
+                due: '2023-12-31T23:59:59Z',
+              };
+
+            const apiUrl = `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks`;
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${googleAccessToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(taskDetails),
+            })
+                .then(response => response.json())
+                .then(data => {
+                  console.log('Task created:', data);
+                })
+                .catch(error => {
+                  console.error('Error creating task:', error);
+                });
+        });*/
+        //res.send(milestoneTitles);
 
     } catch (error) {
         console.error(error);
@@ -175,6 +208,7 @@ app.get('/callback-demo2324', (req, resp) => {
 
         // a simple cookie example
         resp.cookie("user_email", jwt_payload.email);
+        resp.cookie("google_access_token", response.data.access_token);
         // HTML response with the code and access token received from the authorization server
         resp.send(
             '<div> callback with code = <code>' + req.query.code + '</code></div><br>' +
