@@ -104,13 +104,9 @@ app.get("/callback-2324", (req, res) => {
 app.get("/github/repo-scope", async (req, res) => {
     const accessToken = req.cookies.Github_Token;
     const googleAccessToken = req.cookies.google_access_token;
-    console.log(accessToken)
-    console.log(googleAccessToken)
 
     const owner = "47186JoaoSilva"; 
     const repo = "SegInfTest"; 
-
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/milestones`;
 
     const octokit = new Octokit({
         auth: `Bearer ${accessToken}`,
@@ -127,51 +123,64 @@ app.get("/github/repo-scope", async (req, res) => {
             repo
         });
 
-        console.log(milestones);
+        let html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Milestones</title></head><body><h1>Milestones</h1>';
 
-        fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${googleAccessToken}`,
-            },
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log(data);
-                const taskDetails = {
-                    title: 'Test1',
-                    notes: ' ',
-                    due: '2023-12-31T23:59:59Z',
-                };
+        milestones.forEach(milestone => {
+            html += `<div>
+                        <p><strong>Title:</strong> ${milestone.title}</p>
+                        <p><strong>Description:</strong> ${milestone.description}</p>
+                        <button onclick="createTask('${milestone.id}','${milestone.title}', '${googleAccessToken}')">Create Task</button>
+                        <hr>
+                    </div>`;
+        });
 
-                const apiUrl = `https://tasks.googleapis.com/tasks/v1/lists/${data.items[0].id}/tasks`;
-                fetch(apiUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${googleAccessToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(taskDetails),
-                })
-                    .then(response => response.json())
-                    .then(data => {
-                        console.log('Task created:', data);
-                    })
-                    .catch(error => {
-                        console.error('Error creating task:', error);
-                    });
-                
-            })
-            .catch(error => {
-                console.error('Error retrieving task lists:', error);
-            });
-        res.send('Send');
+        html += createTaskFunction;;
 
+        html += '</body></html>';
+        res.send(html);
     } catch (error) {
         console.error(error);
         res.status(500).send("Internal Server Error");
     }
 });
+
+function createTask(milestoneId) {
+    fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${googleAccessToken}`,
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log(data);
+        const taskDetails = {
+            title: 'Test1',
+            notes: ' ',
+            due: '2023-12-31T23:59:59Z',
+        };
+
+        const apiUrl = `https://tasks.googleapis.com/tasks/v1/lists/${data.items[0].id}/tasks`;
+        fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${googleAccessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(taskDetails),
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Task created:', data);
+        })
+        .catch(error => {
+            console.error('Error creating task:', error);
+        });
+    })
+    .catch(error => {
+        console.error('Error retrieving task lists:', error);
+    });
+}
 
 app.get('/callback-demo2324', (req, resp) => {
     //
@@ -249,3 +258,47 @@ app.listen(port, (err) => {
     }
     console.log(`server is listening on ${port}`)
 })
+
+// Define the createTask function
+const createTaskFunction = `
+<script>
+    function createTask(milestoneId, milestoneTitle, googleAccessToken) {
+        console.log(googleAccessToken);
+        fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + googleAccessToken,
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            const taskDetails = {
+                title: milestoneTitle,
+                notes: ' ',
+                due: '2023-12-31T23:59:59Z',
+            };
+            console.log(data.items.id)
+            const apiUrl = 'https://tasks.googleapis.com/tasks/v1/lists/' + data.items[0].id + '/tasks';
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + googleAccessToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(taskDetails),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Task created:', data);
+            })
+            .catch(error => {
+                console.error('Error creating task:', error);
+            });
+        })
+        .catch(error => {
+            console.error('Error retrieving task lists:', error);
+        });
+    }
+</script>
+`;
+
