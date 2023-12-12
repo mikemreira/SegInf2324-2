@@ -46,7 +46,7 @@ app.get('/login', (req, resp) => {
         + 'client_id='+ CLIENT_ID +'&'
         
         // OpenID scope "openid email"
-        + 'scope=openid%20email&'
+        + 'scope=https://www.googleapis.com/auth/tasks%20openid%20email&'
         
         // parameter state is used to check if the user-agent requesting login is the same making the request to the callback URL
         // more info at https://www.rfc-editor.org/rfc/rfc6749#section-10.12
@@ -60,69 +60,127 @@ app.get('/login', (req, resp) => {
 })
 
 app.get("/github", (req, res) => {
-    /*const form = new FormData()
-    form.append("client_id", GITHUB_CLIENT_ID)
-    form.append("redirect_uri", "http://localhost:3001/callback-2324")
-    form.append("scope", "user")
-    form.append("state", "seginf")*/
-
     res.redirect(302, "https://github.com/login/oauth/authorize?"
                 + "client_id=" + GITHUB_CLIENT_ID + "&"
                 + "redirect_uri=" + "http://localhost:3001/callback-2324&"
-                + "scope=user&" //TODO(): MUDAR O SCOPE DE USER PARA REPO?
+                + "scope=user repo&" 
                 + "state=seginf")
 })
 
-app.get("/callback-2324", async (req, res) => {
+app.get("/callback-2324", (req, res) => {
     const githubCode = req.query.code;
+
+    const data = new URLSearchParams();
+    data.append("client_id", GITHUB_CLIENT_ID);
+    data.append("client_secret", GITHUB_CLIENT_SECRET);
+    data.append("code", githubCode);
+    data.append("redirect_uri", "http://localhost:3001/callback-2324");
+
     
-    // Create FormData with required parameters
-    const form = new FormData();
-    form.append("client_id", GITHUB_CLIENT_ID);
-    form.append("client_secret", GITHUB_CLIENT_SECRET);
-    form.append("code", githubCode);
-    form.append("redirect_uri", "http://localhost:3001/callback-2324");
+    axios.post("https://github.com/login/oauth/access_token", data, {
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+        }
+    }).then(response => {
+        // Check if the request was successful
+        if (response.data.access_token) {
+          // Access token obtained
+          const accessToken = response.data.access_token;
+          res.cookie("Github_Token", accessToken);
 
-    // Make a POST request to GitHub token endpoint
-    try {
-        const response = await axios.post("https://github.com/login/oauth/access_token", form, {
+          res.redirect("/github/repo-scope");
+        } else {
+          // Handle error
+          console.error("Error:", response.data.error_description || "Unknown error");
+        }
+      })
+      .catch(error => {
+        // Handle network error or other issues
+        console.error("Error:", error.message || "Network error");
+      });
+});
+
+app.get("/github/repo-scope", async (req, res) => {
+    const accessToken = req.cookies.Github_Token;
+    const googleAccessToken = req.cookies.google_access_token;
+
+    const owner = "47186JoaoSilva"; 
+    const repo = "SegInfTest"; 
+
+    const octokit = new Octokit({
+        auth: `Bearer ${accessToken}`,
+        request: {
             headers: {
-                ...form.getHeaders()
+                'X-GitHub-Api-Version': '2022-11-28'
             }
-        });
+        }
+    });
 
-        // Save the GitHub token in a cookie or handle it as needed
-        res.cookie("Github_Token", response.data.access_token);
-
-        const urlSearchParams = new URLSearchParams(response.data);
-        const accessToken = urlSearchParams.get('access_token');
-        console.log(accessToken)
-
-        const owner = "47186JoaoSilva"; // Replace with the actual owner (username) of the repository
-        const repo = "SegInfTest"; // Replace with the actual name of the repository
-
-        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/milestones`;
-
-        const octokit = new Octokit({
-            auth: `Bearer ${accessToken}`,
-            userAgent: 'YourApp/1.0.0', // Replace with your app's name and version
-            baseUrl: 'https://api.github.com',
-            request: {
-                headers: {
-                    'X-GitHub-Api-Version': '2022-11-28'
-                }
-            }
-        });
-
-        const { data: projects } = await octokit.request('GET /repos/{owner}/{repo}/projects', {
+    try {
+        const { data: milestones } = await octokit.request('GET /repos/{owner}/{repo}/milestones', {
             owner,
             repo
         });
+
+        let html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Milestones</title></head><body><h1>Milestones</h1>';
+
+        milestones.forEach(milestone => {
+            html += `<div>
+                        <p><strong>Title:</strong> ${milestone.title}</p>
+                        <p><strong>Description:</strong> ${milestone.description}</p>
+                        <button onclick="createTask('${milestone.id}','${milestone.title}', '${googleAccessToken}')">Create Task</button>
+                        <hr>
+                    </div>`;
+        });
+
+        html += createTaskFunction;;
+
+        html += '</body></html>';
+        res.send(html);
     } catch (error) {
         console.error(error);
         res.status(500).send("Internal Server Error");
     }
 });
+
+function createTask(milestoneId) {
+    fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${googleAccessToken}`,
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log(data);
+        const taskDetails = {
+            title: 'Test1',
+            notes: ' ',
+            due: '2023-12-31T23:59:59Z',
+        };
+
+        const apiUrl = `https://tasks.googleapis.com/tasks/v1/lists/${data.items[0].id}/tasks`;
+        fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${googleAccessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(taskDetails),
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Task created:', data);
+        })
+        .catch(error => {
+            console.error('Error creating task:', error);
+        });
+    })
+    .catch(error => {
+        console.error('Error retrieving task lists:', error);
+    });
+}
 
 app.get('/callback-demo2324', (req, resp) => {
     //
@@ -158,6 +216,7 @@ app.get('/callback-demo2324', (req, resp) => {
 
         // a simple cookie example
         resp.cookie("user_email", jwt_payload.email);
+        resp.cookie("google_access_token", response.data.access_token);
         // HTML response with the code and access token received from the authorization server
         resp.send(
             '<div> callback with code = <code>' + req.query.code + '</code></div><br>' +
@@ -199,3 +258,47 @@ app.listen(port, (err) => {
     }
     console.log(`server is listening on ${port}`)
 })
+
+// Define the createTask function
+const createTaskFunction = `
+<script>
+    function createTask(milestoneId, milestoneTitle, googleAccessToken) {
+        console.log(googleAccessToken);
+        fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + googleAccessToken,
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            const taskDetails = {
+                title: milestoneTitle,
+                notes: ' ',
+                due: '2023-12-31T23:59:59Z',
+            };
+            console.log(data.items.id)
+            const apiUrl = 'https://tasks.googleapis.com/tasks/v1/lists/' + data.items[0].id + '/tasks';
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + googleAccessToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(taskDetails),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Task created:', data);
+            })
+            .catch(error => {
+                console.error('Error creating task:', error);
+            });
+        })
+        .catch(error => {
+            console.error('Error retrieving task lists:', error);
+        });
+    }
+</script>
+`;
+
